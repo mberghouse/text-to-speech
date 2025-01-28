@@ -5,8 +5,28 @@ import os
 from pathlib import Path
 import base64
 
-# Initialize ElevenLabs client
-client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+# Initialize session state for API key
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = None
+    st.session_state.client = None
+
+def initialize_client():
+    # Title and description
+    st.title("Audio Processing Suite")
+    
+    # API Key input
+    api_key = st.text_input(
+        "Enter your ElevenLabs API Key",
+        type="password",
+        help="Get your API key from https://elevenlabs.io/",
+        key="api_key_input"
+    )
+    
+    if api_key:
+        st.session_state.api_key = api_key
+        st.session_state.client = ElevenLabs(api_key=api_key)
+        return True
+    return False
 
 def text_to_speech_page():
     st.header("Text to Speech")
@@ -24,7 +44,7 @@ def text_to_speech_page():
             st.text_area("File contents:", text_input, height=200)
 
     # Get available voices
-    voices_response = client.voices.get_all()
+    voices_response = st.session_state.client.voices.get_all()
     if not voices_response.voices:  # Access the voices list from the response
         st.error("No voices found. Check your API Key.")
         return
@@ -39,7 +59,7 @@ def text_to_speech_page():
         
         with st.spinner("Generating audio..."):
             # Convert generator to bytes
-            audio_generator = client.text_to_speech.convert(
+            audio_generator = st.session_state.client.text_to_speech.convert(
                 text=text_input,
                 voice_id=voice_dict[selected_voice_name],
                 model_id="eleven_multilingual_v2"
@@ -53,7 +73,7 @@ def voice_changer_page():
     
     uploaded_file = st.file_uploader("Upload audio file", type=['mp3', 'wav'])
     if uploaded_file:
-        voices_response = client.voices.get_all()
+        voices_response = st.session_state.client.voices.get_all()
         voice_dict = {voice.name: voice.voice_id for voice in voices_response.voices}
         target_voice = st.selectbox("Select target voice", list(voice_dict.keys()))
         
@@ -64,7 +84,7 @@ def voice_changer_page():
                     tmp_path = tmp_file.name
                 
                 try:
-                    audio_generator = client.speech_to_speech.convert(
+                    audio_generator = st.session_state.client.speech_to_speech.convert(
                         voice_id=voice_dict[target_voice],
                         audio=uploaded_file,
                         model_id="eleven_multilingual_sts_v2"
@@ -86,7 +106,7 @@ def voice_isolator_page():
     
     if uploaded_file and st.button("Isolate Voice"):
         with st.spinner("Processing..."):
-            audio_generator = client.audio_isolation.audio_isolation(audio=uploaded_file)
+            audio_generator = st.session_state.client.audio_isolation.audio_isolation(audio=uploaded_file)
             audio_data = b"".join(audio_generator)
             st.audio(audio_data, format="audio/mp3")
             st.success("Voice isolated successfully!")
@@ -99,13 +119,13 @@ def dubbing_page():
         st.video(video_file)
         
         text_input = st.text_area("Enter the dubbing script:")
-        voices_response = client.voices.get_all()
+        voices_response = st.session_state.client.voices.get_all()
         voice_dict = {voice.name: voice.voice_id for voice in voices_response.voices}
         selected_voice = st.selectbox("Select dubbing voice", list(voice_dict.keys()))
         
         if st.button("Generate Dub"):
             with st.spinner("Processing..."):
-                dubbed = client.dubbing.dub_a_video_or_an_audio_file(
+                dubbed = st.session_state.client.dubbing.dub_a_video_or_an_audio_file(
                     file=video_file,
                     target_lang="en"  # You might want to make this selectable
                 )
@@ -153,7 +173,7 @@ def voice_creator_page():
             return
             
         with st.spinner("Generating voice previews..."):
-            voices = client.text_to_voice.create_previews(
+            voices = st.session_state.client.text_to_voice.create_previews(
                 voice_description=voice_description,
                 text=sample_text,
             )
@@ -169,7 +189,10 @@ def voice_creator_page():
                     st.info("This would save/select the voice for future use. Implementation needed.")
 
 def main():
-    st.title("Audio Processing Suite")
+    if not st.session_state.client:
+        if not initialize_client():
+            st.warning("Please enter your API key to continue")
+            st.stop()
     
     page = st.sidebar.selectbox(
         "Choose a function",
